@@ -1,3 +1,3 @@
-[submodule "thirdparty/nrf_wifi"]
-	path = thirdparty/nrf_wifi
-	url = https://github.com/zephyrproject-rtos/nrf_wifi.git
+[submodule "third_party/nrf70-bm"]
+	path = third_party/nrf70-bm
+	url = https://github.com/nrfconnect/nrf70-bm.git

@@ -1,6 +1,6 @@
 use crate::bindings::{
-    nrf_wifi_fmac_eth_hdr, nrf_wifi_fmac_ieee80211_hdr, NRF_WIFI_FCTL_FROMDS, NRF_WIFI_FCTL_TODS,
-    NRF_WIFI_FMAC_ETH_P_802_3_MIN, NRF_WIFI_FMAC_ETH_P_AARP, NRF_WIFI_FMAC_ETH_P_IPX,
+    NRF_WIFI_FCTL_FROMDS, NRF_WIFI_FCTL_TODS, NRF_WIFI_FMAC_ETH_P_802_3_MIN, NRF_WIFI_FMAC_ETH_P_AARP,
+    NRF_WIFI_FMAC_ETH_P_IPX, nrf_wifi_fmac_eth_hdr, nrf_wifi_fmac_ieee80211_hdr,
 };
 
 pub fn get_type(buffer: &[u8; 2]) -> u16 {

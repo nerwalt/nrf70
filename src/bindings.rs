@@ -5,7 +5,7 @@
 #[cfg(feature = "defmt")]
 use defmt::Formatter;
 
-include!("../thirdparty/bindings.rs");
+include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 impl TryFrom<u32> for nrf_wifi_host_rpu_msg_type {
     type Error = u32;

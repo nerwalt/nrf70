@@ -1,6 +1,7 @@
-use crate::{bus::Bus, remap_global_addr_to_region_and_offset, slice8};
-
+// use crate::{bus::Bus, remap_global_addr_to_region_and_offset, slice8};
 use super::{ProcessorType, Rpu};
+use crate::bus::Bus;
+use crate::remap_global_addr_to_region_and_offset;
 
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -62,7 +63,7 @@ impl<BUS: Bus> Rpu<BUS> {
 
     pub(crate) async fn read_u32_from_region(&mut self, memory_region: &MemoryRegion, offset: u32) -> u32 {
         let result = self.raw_read_u32_from_memory_region_inner(memory_region, offset).await;
-        trace!("read32 {:08x} {:08x}", memory_region.start + offset, result);
+        // trace!("read_u32_from_region {:08x} {:08x}", memory_region.start + offset, result);
         result
     }
 
@@ -87,12 +88,13 @@ impl<BUS: Bus> Rpu<BUS> {
                     .await;
             }
         }
-        trace!(
-            "read addr={:08x} len={:08x} buf={:02x}",
-            memory_region.start + offset,
-            buffer.len() * 4,
-            slice8(buffer)
-        );
+
+        // trace!(
+        //     "read_buffer_from_region addr={:08x} len={:08x} buf={:02x}",
+        //     memory_region.start + offset,
+        //     buffer.len() * 4,
+        //     slice8(buffer)
+        // );
     }
 
     pub(crate) async fn write_u32_to_region(&mut self, memory_region: &MemoryRegion, offset: u32, value: u32) {
@@ -102,12 +104,12 @@ impl<BUS: Bus> Rpu<BUS> {
     pub(crate) async fn write_buffer_to_region(&mut self, memory_region: &MemoryRegion, offset: u32, buffer: &[u32]) {
         assert!(memory_region.start + offset + (buffer.len() as u32 * 4) <= memory_region.end);
 
-        trace!(
-            "write addr={:08x} len={:08x} buf={:02x}",
-            memory_region.start + offset,
-            buffer.len() * 4,
-            slice8(buffer)
-        );
+        // trace!(
+        //     "write_buffer_to_region addr={:08x} len={:08x} buf={:02x}",
+        //     memory_region.start + offset,
+        //     buffer.len() * 4,
+        //     slice8(buffer)
+        // );
 
         self.bus.write(memory_region.start + offset, buffer).await;
     }

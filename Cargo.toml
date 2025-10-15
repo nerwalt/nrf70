@@ -4,22 +4,25 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-defmt = [ "dep:defmt", "heapless/defmt-03", "embassy-time/defmt" ]
+defmt = [ "dep:defmt", "heapless/defmt", "embassy-time/defmt" ]
 log = ["dep:log"]
 
 [build-dependencies]
 bindgen = "0.71.1"
 
 [dependencies]
+align-data = "0.1.0"
+
 embedded-hal = "1.0.0"
 embedded-hal-async = "1.0.0"
-embassy-sync = { version = "0.6.2" }
-embassy-time = { version = "0.4.0" }
-embassy-net-driver-channel = { version = "0.3.0" }
-embassy-futures = { version = "0.1.1" }
+
+embassy-futures = { version = "0.1.2" }
+embassy-net-driver-channel = { version = "0.3.2" }
+embassy-sync = { version = "0.7.2" }
+embassy-time = { version = "0.5.0" }
 
 defmt = { version = "1.0.1", optional = true }
-log = { version = "0.4.27", optional = true }
-heapless = "0.8.0"
-align-data = "0.1.0"
-num_enum = { version = "0.7.2", default-features = false }
+log = { version = "0.4.28", optional = true }
+
+heapless = "0.9.1"
+num_enum = { version = "0.7.5", default-features = false }

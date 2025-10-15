@@ -3,7 +3,10 @@ use core::mem::transmute;
 use embassy_time::{Duration, Timer};
 use firmware::FirmwareInfo;
 
-use crate::{bindings::*, bus::Bus, util::slice32_mut, Error, PBUS, SR1_RPU_AWAKE, SR1_RPU_READY, SR2_RPU_WAKEUP_REQ};
+use crate::bindings::*;
+use crate::bus::Bus;
+use crate::util::slice32_mut;
+use crate::{Error, PBUS, SR1_RPU_AWAKE, SR1_RPU_READY, SR2_RPU_WAKEUP_REQ};
 
 /*
 pktram: 0xB0000000 - 0xB0030FFF -- 196kb

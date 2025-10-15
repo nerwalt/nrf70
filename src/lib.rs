@@ -10,23 +10,24 @@ use core::mem::{transmute, transmute_copy};
 use action::{Action, ActionState, Item};
 use bindings::*;
 use bus::Bus;
-use embassy_futures::select::{select3, Either3};
+use embassy_futures::select::{Either3, select3};
 use embassy_net_driver_channel as ch;
 use embassy_time::{Duration, Timer};
 use embedded_hal::digital::{InputPin, OutputPin};
 use embedded_hal_async::digital::Wait;
 use fmt::Bytes;
 use heapless::String;
-use net::{eth, NetworkBuffer};
+use net::{NetworkBuffer, eth};
+use rpu::Rpu;
 use rpu::firmware::{FirmwareInfo, FirmwareParseError};
 use rpu::memory::regions::*;
-use rpu::Rpu;
 use util::{meh, slice8, sliceit, unsliceit, unsliceit2};
 
 mod action;
 pub mod bus;
 pub mod control;
 mod net;
+// pub mod scan;
 mod rpu;
 mod util;
 
@@ -47,6 +48,7 @@ pub enum Error {
     Timeout,
     InvalidAddress,
     InvalidArgument,
+    InvalidData,
     NotInitialized,
     BufferTooSmall,
     BufferOverflow,
@@ -97,6 +99,9 @@ pub struct Runner<'a, BUS: Bus, IN: InputPin + Wait, OUT: OutputPin> {
     bucken: OUT,
     iovdd_ctl: OUT,
     host_irq: IN,
+
+    wait_for_scan_done: bool,
+    pending_scan_done: Option<Result<(), Error>>,
 }
 
 pub async fn new<'a, BUS, IN, OUT>(
@@ -122,6 +127,8 @@ where
         bucken,
         iovdd_ctl,
         host_irq,
+        wait_for_scan_done: false,
+        pending_scan_done: None,
     };
     runner.init().await;
 
@@ -146,40 +153,9 @@ impl<'a, BUS: Bus, IN: InputPin + Wait, OUT: OutputPin> Runner<'a, BUS, IN, OUT>
         let mut buffer_u32 = [0u32; (MAX_EVENT_POOL_LEN / 4) as usize];
 
         loop {
-            // match select(
-            //     async {
-            //         self.host_irq.wait_for_high().await;
-            //         // *AND* the buffer is ready...
-            //         // self.rx_chan.rx_buf().await
-            //     },
-            //     // ... or a TX buffer becoming available, i.e. embassy-net wants to send a packet
-            //     // self.tx_chan.tx_buf(),
-            // )
-            // .await
-            // {
-            //     Either::Left(buf) => {
-            //         self.rpu.irq_ack().await;
-            //         // a packet is ready to be received!
-            //         // let n = receive_packet_over_spi(buf).await;
-            //         // rx_chan.rx_done(n);
-            //     }
-            //     Either::Right(_) => {
-            //         // a packet is ready to be sent!
-            //         // send_packet_over_spi(buf).await;
-            //         // tx_chan.tx_done();
-            //     }
-            // }
-
             let action = self.action_state.wait_pending();
             let wifi_tx = self.ch.tx_buf();
             let irq_event = self.host_irq.wait_for_high();
-
-            // Need select here for control
-            //
-            // Send command in case of control
-            //
-            // Wait for TX buffer from ch (on runner). This is the net layer
-            // This is basically the entrypoint for sending packets
 
             match select3(action, wifi_tx, irq_event).await {
                 Either3::First(action) => {
@@ -208,65 +184,27 @@ impl<'a, BUS: Bus, IN: InputPin + Wait, OUT: OutputPin> Runner<'a, BUS, IN, OUT>
                                 self.action_state.respond(Ok(Some(&umac_info_buffer[..])));
                             }
                         },
+                        Action::WaitForScanDone => {
+                            // if let Some(result) = self.pending_scan_done.take() {
+                            //     self.action_state.respond(result.map(|_| None));
+                            // } else {
+                            //     self.wait_for_scan_done = true;
+                            // }
+                        }
                     };
                 }
                 Either3::Second(packet) => {
                     debug!("tx pkt {:02x}", Bytes(&packet[..packet.len().min(48)]));
                 }
                 Either3::Third(irq) => {
-                    debug!("Got IRQ, checking event queue...");
+                    debug!("Got IRQ, draining event queue...");
 
                     match irq {
-                        Ok(()) => {
-                            self.rpu.irq_ack().await;
-                        }
+                        Ok(()) => self.rpu.irq_ack().await,
                         Err(_) => continue,
                     }
 
-                    let event = self.rpu.read_event(&mut buffer_u32).await;
-
-                    if let Ok(message) = event {
-                        let message_type = message.type_ as u32;
-                        let message_size = message.hdr.len as usize;
-
-                        let message_type = match nrf_wifi_host_rpu_msg_type::try_from(message_type) {
-                            Ok(message_type) => {
-                                debug!(
-                                    "Got {:?} event ({}). Message length: {}",
-                                    message_type, message_type as u32, message_size
-                                );
-                                Some(message_type)
-                            }
-                            Err(_) => {
-                                warn!("Unknown event type {:08x}", message_type);
-                                None
-                            }
-                        };
-
-                        let buffer_u8 = slice8(&buffer_u32);
-
-                        if let Some(message_type) = message_type {
-                            match message_type {
-                                nrf_wifi_host_rpu_msg_type::NRF_WIFI_HOST_RPU_MSG_TYPE_SYSTEM => {
-                                    self.handle_system_message(buffer_u8, message_size);
-                                }
-                                nrf_wifi_host_rpu_msg_type::NRF_WIFI_HOST_RPU_MSG_TYPE_UMAC => {
-                                    self.handle_umac_message(buffer_u8, message_size);
-                                }
-                                nrf_wifi_host_rpu_msg_type::NRF_WIFI_HOST_RPU_MSG_TYPE_DATA => {
-                                    match self.handle_data_message(buffer_u8).await {
-                                        Ok(()) => {}
-                                        Err(err) => warn!("Failed to handle data message {:?}", err),
-                                    }
-                                }
-                                nrf_wifi_host_rpu_msg_type::NRF_WIFI_HOST_RPU_MSG_TYPE_SUPPLICANT => {
-                                    debug!("Got supplicant event, ignoring...");
-                                }
-                            }
-                        } else {
-                            warn!("Unhandled message type: {}", meh(message.type_));
-                        }
-                    }
+                    self.drain_event_queue(&mut buffer_u32).await;
 
                     if self.rpu.irq_watchdog_check().await {
                         self.rpu.irq_watchdog_ack().await;
@@ -279,6 +217,56 @@ impl<'a, BUS: Bus, IN: InputPin + Wait, OUT: OutputPin> Runner<'a, BUS, IN, OUT>
     async fn boot(&mut self, firmware: *const [u8]) -> Result<(), Error> {
         let firmware_info = FirmwareInfo::read(firmware)?;
         self.rpu.boot(&firmware_info).await
+    }
+
+    async fn drain_event_queue(&mut self, buffer_u32: &mut [u32; 250]) {
+        loop {
+            match self.rpu.read_event(buffer_u32).await {
+                Ok(message) => {
+                    let message_type = message.type_ as u32;
+                    let message_size = message.hdr.len as usize;
+
+                    let message_type = match nrf_wifi_host_rpu_msg_type::try_from(message_type) {
+                        Ok(message_type) => {
+                            debug!(
+                                "Got {:?} event ({}). Message length: {}",
+                                message_type, message_type as u32, message_size
+                            );
+                            Some(message_type)
+                        }
+                        Err(_) => {
+                            warn!("Unknown event type {:08x}", message_type);
+                            None
+                        }
+                    };
+
+                    let buffer_u8 = slice8(buffer_u32);
+
+                    if let Some(message_type) = message_type {
+                        match message_type {
+                            nrf_wifi_host_rpu_msg_type::NRF_WIFI_HOST_RPU_MSG_TYPE_SYSTEM => {
+                                self.handle_system_message(buffer_u8, message_size);
+                            }
+                            nrf_wifi_host_rpu_msg_type::NRF_WIFI_HOST_RPU_MSG_TYPE_UMAC => {
+                                self.handle_umac_message(buffer_u8, message_size);
+                            }
+                            nrf_wifi_host_rpu_msg_type::NRF_WIFI_HOST_RPU_MSG_TYPE_DATA => {
+                                match self.handle_data_message(buffer_u8).await {
+                                    Ok(()) => {}
+                                    Err(err) => warn!("Failed to handle data message {:?}", err),
+                                }
+                            }
+                            nrf_wifi_host_rpu_msg_type::NRF_WIFI_HOST_RPU_MSG_TYPE_SUPPLICANT => {
+                                debug!("Got supplicant event, ignoring...");
+                            }
+                        }
+                    } else {
+                        warn!("Unhandled message type: {}", meh(message.type_));
+                    }
+                }
+                Err(_) => break,
+            }
+        }
     }
 
     fn handle_system_message(&self, buffer: &[u8], size: usize) {
@@ -299,7 +287,7 @@ impl<'a, BUS: Bus, IN: InputPin + Wait, OUT: OutputPin> Runner<'a, BUS, IN, OUT>
         }
     }
 
-    fn handle_umac_message(&self, buffer: &[u8], size: usize) {
+    fn handle_umac_message(&mut self, buffer: &[u8], size: usize) {
         let header: &nrf_wifi_umac_hdr = unsliceit(buffer);
         let event = nrf_wifi_umac_events::try_from(header.cmd_evnt as u32);
         let header_length = size_of::<nrf_wifi_umac_hdr>();
@@ -360,6 +348,32 @@ impl<'a, BUS: Bus, IN: InputPin + Wait, OUT: OutputPin> Runner<'a, BUS, IN, OUT>
                     meh(response.num_scan_frequencies),
                     meh(response.ie.ie_len)
                 );
+            }
+            Ok(nrf_wifi_umac_events::NRF_WIFI_UMAC_EVENT_SCAN_DISPLAY_RESULT) => {
+                let event: &nrf_wifi_umac_event_new_scan_display_results = unsliceit(buffer);
+                if event.umac_hdr.seq != 0 {
+                    debug!(">>> more scan results");
+                    self.action_state.update_response(buffer as *const [u8]);
+                } else {
+                    debug!(">>> scan results done");
+                    self.action_state.respond(Ok(Some(buffer as *const [u8])));
+                };
+            }
+            Ok(nrf_wifi_umac_events::NRF_WIFI_UMAC_EVENT_SCAN_DONE) => {
+                let event: &nrf_wifi_umac_event_scan_done = unsliceit(buffer);
+
+                let result = if event.status == 0 {
+                    Ok(None)
+                } else {
+                    Err(Error::Code(event.status))
+                };
+                self.action_state.respond(result);
+                // if self.wait_for_scan_done {
+                //     self.wait_for_scan_done = false;
+                //     self.action_state.respond(result);
+                // } else {
+                //     self.pending_scan_done = Some(result.map(|_| ()));
+                // }
             }
             _ => warn!("UMAC event not handled: {:#08x}", meh(header.cmd_evnt)),
         }
@@ -479,9 +493,9 @@ impl<'a, BUS: Bus, IN: InputPin + Wait, OUT: OutputPin> Runner<'a, BUS, IN, OUT>
                     }
                 }
                 Ok(nrf_wifi_rx_pkt_type::NRF_WIFI_RX_PKT_BCN_PRB_RSP) => {
-                    let mut buffer: String<512> = String::new();
-                    hexdump(&mut buffer, network_buffer.get_data());
-                    info!("{}", buffer);
+                    let mut _buffer: String<512> = String::new();
+                    // util::hexdump(&mut buffer, network_buffer.get_data());
+                    // info!("{}", buffer);
                 }
                 _ => {
                     let rx_packet_type = rx_packet.rx_pkt_type;
@@ -493,46 +507,5 @@ impl<'a, BUS: Bus, IN: InputPin + Wait, OUT: OutputPin> Runner<'a, BUS, IN, OUT>
         }
 
         Ok(())
-    }
-}
-
-use core::fmt::Write;
-
-/// Dumps a slice of bytes in a hex + ASCII format to any core::fmt::Write implementor.
-/// Intended for embedded environments like Embassy where heapless buffers and async-safe logging are common.
-pub fn hexdump<W: Write>(writer: &mut W, data: &[u8]) {
-    let mut offset = 0;
-
-    while offset < data.len() {
-        let line = &data[offset..core::cmp::min(offset + 16, data.len())];
-
-        // Print offset
-        let _ = write!(writer, "{:08x}: ", offset);
-
-        // Print hex representation
-        for i in 0..16 {
-            if i < line.len() {
-                let _ = write!(writer, "{:02x} ", line[i]);
-            } else {
-                let _ = write!(writer, "   ");
-            }
-        }
-
-        // Add spacing
-        let _ = write!(writer, " |");
-
-        // Print ASCII representation
-        for &b in line {
-            let ch = if b.is_ascii_graphic() || b == b' ' {
-                b as char
-            } else {
-                '.'
-            };
-            let _ = write!(writer, "{}", ch);
-        }
-
-        let _ = writeln!(writer, "|");
-
-        offset += 16;
     }
 }

@@ -2,26 +2,22 @@ use core::mem::{size_of, zeroed};
 
 use embassy_time::{Duration, Timer};
 
-use crate::{
-    bindings::{
-        host_rpu_msg, host_rpu_msg_hdr, nrf_wifi_cmd_get_stats, nrf_wifi_cmd_get_wiphy, nrf_wifi_cmd_sys_deinit,
-        nrf_wifi_cmd_sys_init, nrf_wifi_host_rpu_msg_type, nrf_wifi_ie, nrf_wifi_index_ids, nrf_wifi_scan_params,
-        nrf_wifi_sys_commands, nrf_wifi_sys_head, nrf_wifi_umac_chg_vif_state_info, nrf_wifi_umac_cmd_abort_scan,
-        nrf_wifi_umac_cmd_add_vif, nrf_wifi_umac_cmd_change_macaddr, nrf_wifi_umac_cmd_chg_sta,
-        nrf_wifi_umac_cmd_chg_vif_state, nrf_wifi_umac_cmd_get_scan_results, nrf_wifi_umac_cmd_key,
-        nrf_wifi_umac_cmd_mcast_filter, nrf_wifi_umac_cmd_mgmt_frame_reg, nrf_wifi_umac_cmd_scan,
-        nrf_wifi_umac_cmd_set_power_save, nrf_wifi_umac_commands, nrf_wifi_umac_hdr, nrf_wifi_umac_scan_info,
-        rpu_stats_type, scan_reason, MAX_NRF_WIFI_UMAC_CMD_SIZE, NRF_WIFI_HAL_MSG_TYPE,
-        NRF_WIFI_INDEX_IDS_WDEV_ID_VALID, RPU_ADDR_MASK_OFFSET, RPU_DATA_CMD_SIZE_MAX_RX, RPU_MCU_CORE_INDIRECT_BASE,
-        RPU_REG_INT_TO_MCU_CTRL,
-    },
-    bus::Bus,
-    rpu::{Error, ProcessorType},
-    slice8,
-    util::{slice32, slice8_mut, sliceit},
-};
-
 use super::Rpu;
+use crate::bindings::{
+    MAX_NRF_WIFI_UMAC_CMD_SIZE, NRF_WIFI_HAL_MSG_TYPE, NRF_WIFI_INDEX_IDS_WDEV_ID_VALID, RPU_ADDR_MASK_OFFSET,
+    RPU_DATA_CMD_SIZE_MAX_RX, RPU_MCU_CORE_INDIRECT_BASE, RPU_REG_INT_TO_MCU_CTRL, host_rpu_msg, host_rpu_msg_hdr,
+    nrf_wifi_cmd_get_stats, nrf_wifi_cmd_get_wiphy, nrf_wifi_cmd_sys_deinit, nrf_wifi_cmd_sys_init,
+    nrf_wifi_host_rpu_msg_type, nrf_wifi_ie, nrf_wifi_index_ids, nrf_wifi_scan_params, nrf_wifi_sys_commands,
+    nrf_wifi_sys_head, nrf_wifi_umac_chg_vif_state_info, nrf_wifi_umac_cmd_abort_scan, nrf_wifi_umac_cmd_add_vif,
+    nrf_wifi_umac_cmd_change_macaddr, nrf_wifi_umac_cmd_chg_sta, nrf_wifi_umac_cmd_chg_vif_state,
+    nrf_wifi_umac_cmd_get_scan_results, nrf_wifi_umac_cmd_key, nrf_wifi_umac_cmd_mcast_filter,
+    nrf_wifi_umac_cmd_mgmt_frame_reg, nrf_wifi_umac_cmd_scan, nrf_wifi_umac_cmd_set_power_save, nrf_wifi_umac_commands,
+    nrf_wifi_umac_hdr, nrf_wifi_umac_scan_info, rpu_stats_type, scan_reason,
+};
+use crate::bus::Bus;
+use crate::rpu::{Error, ProcessorType};
+use crate::slice8;
+use crate::util::{slice8_mut, slice32, sliceit};
 
 pub trait Command {
     const MESSAGE_TYPE: nrf_wifi_host_rpu_msg_type;

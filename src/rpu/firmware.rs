@@ -1,20 +1,14 @@
-use core::{
-    fmt,
-    mem::{self, zeroed},
-};
+use core::fmt;
+use core::mem::{self, zeroed};
 
 use embassy_time::Timer;
 
-use crate::{
-    bindings::*,
-    bus::Bus,
-    remap_global_addr_to_region_and_offset,
-    rpu::{MAX_TX_AGGREGATION, RX_MAX_DATA_SIZE},
-    util::slice32,
-    Error,
-};
-
-use super::{ProcessorType, Rpu, RX_BUFS_PER_QUEUE};
+use super::{ProcessorType, RX_BUFS_PER_QUEUE, Rpu};
+use crate::bindings::*;
+use crate::bus::Bus;
+use crate::rpu::{MAX_TX_AGGREGATION, RX_MAX_DATA_SIZE};
+use crate::util::slice32;
+use crate::{Error, remap_global_addr_to_region_and_offset};
 
 #[derive(Copy, Clone)]
 pub struct FirmwareImage<'a> {
@@ -306,9 +300,9 @@ impl<BUS: Bus> Rpu<BUS> {
             watchdog_timer_val: 0xFF_FFFF, // TODO: enable watchdog timer
             keep_alive_enable: 1,
             keep_alive_period: 60,
-            max_ps_poll_fail_cnt: 10,
+            // max_ps_poll_fail_cnt: 10,
             raw_scan_enable: 0,
-            stbc_enable_in_ht: 0,
+            // stbc_enable_in_ht: 0,
         };
 
         self.send_command(init_command).await

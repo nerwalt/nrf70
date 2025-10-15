@@ -1,65 +1,19 @@
-use core::{mem::zeroed, ptr};
+use core::ptr;
 
-use embassy_time::Duration;
-
-use crate::{
-    action::{Action, Item},
-    bindings::{
-        host_rpu_umac_info, nrf_wifi_cmd_get_stats, nrf_wifi_ps_state, nrf_wifi_sys_umac_event_stats,
-        nrf_wifi_umac_change_macaddr_info, nrf_wifi_umac_cmd_change_macaddr, nrf_wifi_umac_cmd_chg_sta,
-        nrf_wifi_umac_cmd_chg_vif_state, nrf_wifi_umac_cmd_get_scan_results, nrf_wifi_umac_cmd_mcast_filter,
-        nrf_wifi_umac_cmd_mgmt_frame_reg, nrf_wifi_umac_cmd_scan, nrf_wifi_umac_cmd_set_power_save,
-        nrf_wifi_umac_frame_match, nrf_wifi_umac_hdr, nrf_wifi_umac_mcast_cfg, nrf_wifi_umac_mgmt_frame_info,
-        nrf_wifi_umac_set_power_save_info, NRF_WIFI_CMD_SET_STATION_STA_FLAGS2_VALID,
-    },
-    rpu::commands::Command,
-    util::sliceit,
-    Control, Error,
+use crate::action::{Action, Item};
+use crate::bindings::{
+    host_rpu_umac_info, nrf_wifi_cmd_get_stats, 
+    nrf_wifi_sys_umac_event_stats, nrf_wifi_umac_change_macaddr_info, nrf_wifi_umac_cmd_change_macaddr,
+    nrf_wifi_umac_cmd_chg_vif_state, 
+     nrf_wifi_umac_hdr, 
 };
+use crate::rpu::commands::Command;
+use crate::util::sliceit;
+use crate::Error;
 
-/// WiFi scan type.
-#[derive(Copy, Clone, Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum ScanType {
-    /// Active scan: the station actively transmits probes that make APs respond.
-    /// Faster, but uses more power.
-    Active,
-    /// Passive scan: the station doesn't transmit any probes, just listens for beacons.
-    /// Slower, but uses less power.
-    Passive,
-}
+use crate::Control;
 
-/// Scan options.
-#[derive(Copy, Clone, Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[non_exhaustive]
-pub struct ScanOptions {
-    /// SSID to scan for.
-    // pub ssid: Option<heapless::String<32>>,
-    /// If set to `None`, all APs will be returned. If set to `Some`, only APs
-    /// with the specified BSSID will be returned.
-    pub bssid: Option<[u8; 6]>,
-    /// Number of probes to send on each channel.
-    pub nprobes: Option<u16>,
-    /// Time to spend waiting on the home channel.
-    pub home_time: Option<Duration>,
-    /// Scan type: active or passive.
-    pub scan_type: ScanType,
-    /// Period of time to wait on each channel when passive scanning.
-    pub dwell_time: Option<Duration>,
-}
-
-impl Default for ScanOptions {
-    fn default() -> Self {
-        Self {
-            bssid: None,
-            nprobes: None,
-            home_time: None,
-            scan_type: ScanType::Passive,
-            dwell_time: None,
-        }
-    }
-}
+pub mod scan;
 
 #[allow(dead_code)]
 impl<'a> Control<'a> {
@@ -130,6 +84,7 @@ impl<'a> Control<'a> {
 
         info!("Brought interface up");
 
+        /*
         // let result = self.read_u32_from_region(SYSBUS, 0x0C0).await;
         // info!("PART: {}", result);
 
@@ -238,6 +193,7 @@ impl<'a> Control<'a> {
                 }
             };
         }
+        */
 
         // --- Get wiphy ---
         //
@@ -266,95 +222,25 @@ impl<'a> Control<'a> {
         // Command 7
 
         // --- Update station entry ---
-        let mut command = nrf_wifi_umac_cmd_chg_sta {
-            umac_hdr: nrf_wifi_umac_hdr::default(),
-            valid_fields: NRF_WIFI_CMD_SET_STATION_STA_FLAGS2_VALID,
-            info: unsafe { zeroed() },
-        };
+        // let mut command = nrf_wifi_umac_cmd_chg_sta {
+        //     umac_hdr: nrf_wifi_umac_hdr::default(),
+        //     valid_fields: NRF_WIFI_CMD_SET_STATION_STA_FLAGS2_VALID,
+        //     info: unsafe { zeroed() },
+        // };
 
-        command.prepare();
+        // command.prepare();
 
-        match self
-            .action_state
-            .issue(Action::Command((command.domain(), true, sliceit(&command), None)))
-            .await
-        {
-            Ok(_) => {}
-            Err(err) => {
-                error!("Failed to update station entry: {:?}", err);
-                return Err(err);
-            }
-        };
-        Ok(())
-    }
-
-    pub async fn scan(&mut self, options: ScanOptions) -> Result<(), Error> {
-        let mut command = nrf_wifi_umac_cmd_scan::default();
-
-        match options.scan_type {
-            ScanType::Active => {
-                command.info.scan_params.passive_scan = 0;
-
-                if let Some(dwell_time) = options.dwell_time {
-                    command.info.scan_params.dwell_time_active = dwell_time.as_millis() as u16;
-                }
-            }
-            ScanType::Passive => {
-                command.info.scan_params.passive_scan = 1;
-
-                if let Some(dwell_time) = options.dwell_time {
-                    command.info.scan_params.dwell_time_passive = dwell_time.as_millis() as u16;
-                }
-            }
-        }
-
-        if let Some(bssid) = options.bssid {
-            command.info.scan_params.mac_addr = bssid;
-        }
-
-        command.info.scan_params.num_scan_channels = 20;
-
-        match self
-            .action_state
-            .issue(Action::Command((command.domain(), true, sliceit(&command), None)))
-            .await
-        {
-            Ok(_) => Ok(()),
-            Err(error) => {
-                error!("Failed to get stats: {:?}", error);
-                return Err(error);
-            }
-        }
-
-        // TODO: wait for scan done? Weird that the Zephyr samples receives that event
-        // but this does not for some reason...
-    }
-
-    pub async fn get_scan_results(&mut self) -> Result<(), Error> {
-        let command = nrf_wifi_umac_cmd_get_scan_results::default();
-
-        let mut response = [0u8; 1024];
-
-        match self
-            .action_state
-            .issue(Action::Command((
-                command.domain(),
-                true,
-                sliceit(&command),
-                Some(&mut response[..]),
-            )))
-            .await
-        {
-            Ok(response_length) => {
-                if let Some(length) = response_length {
-                    info!("Response length: {}", length);
-                }
-            }
-            Err(error) => {
-                error!("Failed to get stats: {:?}", error);
-                return Err(error);
-            }
-        }
+        // match self
+        //     .action_state
+        //     .issue(Action::Command((command.domain(), true, sliceit(&command), None)))
+        //     .await
+        // {
+        //     Ok(_) => {}
+        //     Err(err) => {
+        //         error!("Failed to update station entry: {:?}", err);
+        //         return Err(err);
+        //     }
+        // };
 
         Ok(())
     }

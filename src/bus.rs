@@ -1,7 +1,8 @@
 use embedded_hal::spi::Operation;
 use embedded_hal_async::spi::SpiDevice;
 
-use crate::{slice8, util::slice8_mut};
+use crate::slice8;
+use crate::util::slice8_mut;
 
 pub trait Bus {
     async fn read(&mut self, addr: u32, buf: &mut [u32]);
@@ -32,6 +33,11 @@ impl<T: SpiDevice> Bus for SpiBus<T> {
             ])
             .await
             .unwrap();
+        if buf.len() > 4 {
+            trace!("read: addr={:08x} len={}", addr, buf.len());
+        } else {
+            trace!("read: addr={:08x} buf={:x}", addr, buf);
+        }
     }
 
     #[allow(clippy::cast_possible_truncation)]
@@ -43,13 +49,18 @@ impl<T: SpiDevice> Bus for SpiBus<T> {
             ])
             .await
             .unwrap();
+        if buf.len() > 4 {
+            trace!("write: addr={:08x} len={}", addr, buf.len());
+        } else {
+            trace!("write: addr={:08x} buf={:x}", addr, buf);
+        }
     }
 
     async fn read_sr0(&mut self) -> u8 {
         let mut buf = [0; 2];
         self.spi.transfer(&mut buf, &[0x05]).await.unwrap();
         let val = buf[1];
-        trace!("read sr0 = {:02x}", val);
+        trace!("read_sr0: {:02x}", val);
         val
     }
 
@@ -57,7 +68,7 @@ impl<T: SpiDevice> Bus for SpiBus<T> {
         let mut buf = [0; 2];
         self.spi.transfer(&mut buf, &[0x1f]).await.unwrap();
         let val = buf[1];
-        trace!("read sr1 = {:02x}", val);
+        trace!("read_sr1: {:02x}", val);
         val
     }
 
@@ -65,12 +76,12 @@ impl<T: SpiDevice> Bus for SpiBus<T> {
         let mut buf = [0; 2];
         self.spi.transfer(&mut buf, &[0x2f]).await.unwrap();
         let val = buf[1];
-        trace!("read sr2 = {:02x}", val);
+        trace!("read_sr2: {:02x}", val);
         val
     }
 
     async fn write_sr2(&mut self, val: u8) {
-        trace!("write sr2 = {:02x}", val);
+        trace!("write_sr2: {:02x}", val);
         self.spi.write(&[0x3f, val]).await.unwrap();
     }
 }
