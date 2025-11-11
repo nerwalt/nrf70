@@ -99,9 +99,6 @@ pub struct Runner<'a, BUS: Bus, IN: InputPin + Wait, OUT: OutputPin> {
     bucken: OUT,
     iovdd_ctl: OUT,
     host_irq: IN,
-
-    wait_for_scan_done: bool,
-    pending_scan_done: Option<Result<(), Error>>,
 }
 
 pub async fn new<'a, BUS, IN, OUT>(
@@ -127,8 +124,6 @@ where
         bucken,
         iovdd_ctl,
         host_irq,
-        wait_for_scan_done: false,
-        pending_scan_done: None,
     };
     runner.init().await;
 
@@ -184,13 +179,7 @@ impl<'a, BUS: Bus, IN: InputPin + Wait, OUT: OutputPin> Runner<'a, BUS, IN, OUT>
                                 self.action_state.respond(Ok(Some(&umac_info_buffer[..])));
                             }
                         },
-                        Action::WaitForScanDone => {
-                            // if let Some(result) = self.pending_scan_done.take() {
-                            //     self.action_state.respond(result.map(|_| None));
-                            // } else {
-                            //     self.wait_for_scan_done = true;
-                            // }
-                        }
+                        Action::WaitForDone => { }
                     };
                 }
                 Either3::Second(packet) => {
@@ -367,13 +356,8 @@ impl<'a, BUS: Bus, IN: InputPin + Wait, OUT: OutputPin> Runner<'a, BUS, IN, OUT>
                 } else {
                     Err(Error::Code(event.status))
                 };
+
                 self.action_state.respond(result);
-                // if self.wait_for_scan_done {
-                //     self.wait_for_scan_done = false;
-                //     self.action_state.respond(result);
-                // } else {
-                //     self.pending_scan_done = Some(result.map(|_| ()));
-                // }
             }
             _ => warn!("UMAC event not handled: {:#08x}", meh(header.cmd_evnt)),
         }

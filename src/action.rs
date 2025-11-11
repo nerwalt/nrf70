@@ -20,7 +20,7 @@ pub enum Action {
     Boot(*const [u8]),
     Command((nrf_wifi_host_rpu_msg_type, bool, *const [u8], Option<*mut [u8]>)),
     Get((Item, *mut [u8])),
-    WaitForScanDone,
+    WaitForDone,
 }
 
 #[derive(Clone, Copy)]

@@ -93,10 +93,14 @@ impl<'a> Control<'a> {
                 e
             })?;
 
-        self.action_state.issue(Action::WaitForScanDone).await.map_err(|e| {
+        trace!("Scan started");
+
+        self.action_state.issue(Action::WaitForDone).await.map_err(|e| {
             error!("Wait for scan done failed: {:?}", e);
             e
         })?;
+
+        trace!("Scan done");
 
         Ok(())
     }
