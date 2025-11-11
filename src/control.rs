@@ -2,16 +2,12 @@ use core::ptr;
 
 use crate::action::{Action, Item};
 use crate::bindings::{
-    host_rpu_umac_info, nrf_wifi_cmd_get_stats, 
-    nrf_wifi_sys_umac_event_stats, nrf_wifi_umac_change_macaddr_info, nrf_wifi_umac_cmd_change_macaddr,
-    nrf_wifi_umac_cmd_chg_vif_state, 
-     nrf_wifi_umac_hdr, 
+    host_rpu_umac_info, nrf_wifi_cmd_get_stats, nrf_wifi_sys_umac_event_stats, nrf_wifi_umac_change_macaddr_info,
+    nrf_wifi_umac_cmd_change_macaddr, nrf_wifi_umac_cmd_chg_vif_state, nrf_wifi_umac_hdr,
 };
 use crate::rpu::commands::Command;
 use crate::util::sliceit;
-use crate::Error;
-
-use crate::Control;
+use crate::{Control, Error};
 
 pub mod scan;
 

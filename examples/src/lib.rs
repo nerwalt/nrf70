@@ -1,11 +1,10 @@
 #![no_std]
 
-use embassy_nrf::{bind_interrupts, spim};
 use embassy_nrf::gpio::{Input, Output};
 use embassy_nrf::spim::Spim;
+use embassy_nrf::{bind_interrupts, spim};
 use embassy_time::Delay;
 use embedded_hal_bus::spi::ExclusiveDevice;
-
 use nrf70::bus::SpiBus;
 
 bind_interrupts!(pub struct Irqs {

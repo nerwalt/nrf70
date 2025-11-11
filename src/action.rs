@@ -26,11 +26,13 @@ pub enum Action {
 #[derive(Clone, Copy)]
 enum ActionStateInner {
     Pending(Action),
-    Sent { 
+    Sent {
         response_buffer: Option<*mut [u8]>,
-        bytes_written: usize
+        bytes_written: usize,
     },
-    Done { result: Result<Option<usize>, Error> },
+    Done {
+        result: Result<Option<usize>, Error>,
+    },
 }
 
 struct Wakers {
@@ -125,7 +127,11 @@ impl ActionState {
     }
 
     pub fn update_response(&self, result_data: *const [u8]) {
-        if let ActionStateInner::Sent { response_buffer, mut bytes_written } = self.state.get() {
+        if let ActionStateInner::Sent {
+            response_buffer,
+            mut bytes_written,
+        } = self.state.get()
+        {
             if let Some(response_buffer_ptr) = response_buffer {
                 let result_data_length = result_data.len();
                 let response_buffer: &mut [u8] = unsafe { &mut *response_buffer_ptr };
@@ -149,17 +155,20 @@ impl ActionState {
 
                 bytes_written += result_data_length;
 
-                self.state.set(ActionStateInner::Sent { 
-                    response_buffer: Some(response_buffer), 
+                self.state.set(ActionStateInner::Sent {
+                    response_buffer: Some(response_buffer),
                     bytes_written,
                 });
-                
             }
         }
     }
 
     pub fn respond(&self, result: Result<Option<*const [u8]>, Error>) {
-        if let ActionStateInner::Sent { response_buffer, bytes_written } = self.state.get() {
+        if let ActionStateInner::Sent {
+            response_buffer,
+            bytes_written,
+        } = self.state.get()
+        {
             // Response buffer may be a value (given by the optional) and should be filled under the following conditions:
             //
             // * The result is OK and its optional contains a value

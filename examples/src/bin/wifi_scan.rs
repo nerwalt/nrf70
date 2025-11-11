@@ -10,10 +10,9 @@ use embassy_time::{Delay, Duration, Timer};
 use embedded_hal_bus::spi::ExclusiveDevice;
 use nrf70::bus::SpiBus;
 use nrf70::control::scan::{ScanOptions, ScanType};
+use nrf70_examples::*;
 use static_cell::StaticCell;
 use {defmt_rtt as _, embassy_nrf as _, panic_probe as _};
-
-use nrf70_examples::*;
 
 static FW: &[u8] = include_aligned!(
     Align16,

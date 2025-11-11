@@ -1,22 +1,14 @@
-use heapless::Vec;
-use crate::bindings::{
-    nrf_wifi_signal,
-    nrf_wifi_umac_cmd_scan,
-    nrf_wifi_umac_event_new_scan_display_results,
-    nrf_wifi_umac_cmd_get_scan_results,
-    scan_reason,
-    umac_display_results, 
-    NRF_WIFI_SIGNAL_TYPE_MBM,
-    NRF_WIFI_SIGNAL_TYPE_UNSPEC,
-};
 use embassy_time::Duration;
+use heapless::Vec;
 
-use crate::rpu::commands::Command;
 use crate::action::Action;
+use crate::bindings::{
+    NRF_WIFI_SIGNAL_TYPE_MBM, NRF_WIFI_SIGNAL_TYPE_UNSPEC, nrf_wifi_signal, nrf_wifi_umac_cmd_get_scan_results,
+    nrf_wifi_umac_cmd_scan, nrf_wifi_umac_event_new_scan_display_results, scan_reason, umac_display_results,
+};
+use crate::rpu::commands::Command;
 use crate::util::{sliceit, unsliceit};
-use crate::Error;
-
-use crate::Control;
+use crate::{Control, Error};
 
 /// WiFi scan type.
 #[derive(Copy, Clone, Debug)]
@@ -64,7 +56,6 @@ impl Default for ScanOptions {
 
 // Scan related impls
 impl<'a> Control<'a> {
-
     /// Run a wifi scan
     pub async fn scan(&mut self, options: ScanOptions) -> Result<(), Error> {
         let mut command = nrf_wifi_umac_cmd_scan::default();
@@ -136,12 +127,10 @@ impl<'a> Control<'a> {
                     match WifiScanResults::try_from(raw_results) {
                         Ok(new_results) => {
                             if let Err(_) = results.extend(&new_results) {
-                                return Ok(results)
+                                return Ok(results);
                             }
                         }
-                        Err(_err) => {
-                            return Err(Error::InvalidData)
-                        }
+                        Err(_err) => return Err(Error::InvalidData),
                     }
                 }
             }
@@ -153,17 +142,16 @@ impl<'a> Control<'a> {
 
         Ok(results)
     }
-
 }
 
 /// Wifi Access Point (AP)
 #[derive(Clone, Debug)]
 pub struct WifiAp {
-    /// SSID 
+    /// SSID
     pub ssid: Vec<u8, 32>,
     /// BSSID (MAC address)
     pub bssid: [u8; 6],
-    /// RSSI in dBm 
+    /// RSSI in dBm
     pub rssi: i16,
     /// Frequency (Band) in MHz
     pub frequency: f32,
@@ -198,7 +186,6 @@ impl defmt::Format for WifiAp {
     }
 }
 
-
 /// Wifi Scan results
 #[derive(Default)]
 pub struct WifiScanResults<const N: usize = 8> {
@@ -206,7 +193,6 @@ pub struct WifiScanResults<const N: usize = 8> {
 }
 
 impl<const N: usize> WifiScanResults<N> {
-
     pub fn extend(&mut self, other: &WifiScanResults) -> Result<(), ()> {
         self.aps.extend_from_slice(other.aps.as_slice()).map_err(|_| ())?;
         // for ap in other.aps {
@@ -214,7 +200,6 @@ impl<const N: usize> WifiScanResults<N> {
         // }
         Ok(())
     }
-    
 }
 
 #[cfg(feature = "defmt")]
@@ -251,9 +236,15 @@ impl From<&umac_display_results> for WifiAp {
         };
 
         // Network channel
-        let channel  = r.nwk_channel;
+        let channel = r.nwk_channel;
 
-        WifiAp { ssid, bssid, rssi, frequency, channel }
+        WifiAp {
+            ssid,
+            bssid,
+            rssi,
+            frequency,
+            channel,
+        }
     }
 }
 
@@ -282,7 +273,7 @@ fn rssi_dbm_from_signal(sig: &nrf_wifi_signal) -> i16 {
         let unspec = unsafe { sig.signal.unspec_signal } as i16;
         // Map 0..100 -> approx -100..0 dBm
         unspec.saturating_sub(100)
-    } else  {
+    } else {
         0
     }
 }
