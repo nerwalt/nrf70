@@ -27,7 +27,6 @@ mod action;
 pub mod bus;
 pub mod control;
 mod net;
-// pub mod scan;
 mod rpu;
 mod util;
 
@@ -342,11 +341,10 @@ impl<'a, BUS: Bus, IN: InputPin + Wait, OUT: OutputPin> Runner<'a, BUS, IN, OUT>
                 let event: &nrf_wifi_umac_event_new_scan_display_results = unsliceit(buffer);
                 if event.umac_hdr.seq != 0 {
                     debug!(">>> more scan results");
-                    self.action_state.update_response(buffer as *const [u8]);
                 } else {
                     debug!(">>> scan results done");
-                    self.action_state.respond(Ok(Some(buffer as *const [u8])));
                 };
+                self.action_state.respond(Ok(Some(buffer as *const [u8])));
             }
             Ok(nrf_wifi_umac_events::NRF_WIFI_UMAC_EVENT_SCAN_DONE) => {
                 let event: &nrf_wifi_umac_event_scan_done = unsliceit(buffer);

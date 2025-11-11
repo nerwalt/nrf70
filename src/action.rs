@@ -26,10 +26,7 @@ pub enum Action {
 #[derive(Clone, Copy)]
 enum ActionStateInner {
     Pending(Action),
-    Sent {
-        response_buffer: Option<*mut [u8]>,
-        bytes_written: usize,
-    },
+    Sent { response_buffer: Option<*mut [u8]> },
     Done {
         result: Result<Option<usize>, Error>,
     },
@@ -99,7 +96,6 @@ impl ActionState {
                         Action::Get((_, response_buffer)) => Some(response_buffer),
                         _ => None,
                     },
-                    bytes_written: 0,
                 });
 
                 Poll::Ready(pending)
@@ -126,49 +122,8 @@ impl ActionState {
         self.wait_complete().await
     }
 
-    pub fn update_response(&self, result_data: *const [u8]) {
-        if let ActionStateInner::Sent {
-            response_buffer,
-            mut bytes_written,
-        } = self.state.get()
-        {
-            if let Some(response_buffer_ptr) = response_buffer {
-                let result_data_length = result_data.len();
-                let response_buffer: &mut [u8] = unsafe { &mut *response_buffer_ptr };
-
-                if (response_buffer.len() - bytes_written) < result_data_length {
-                    self.state.set(ActionStateInner::Done {
-                        result: Err(Error::BufferTooSmall),
-                    });
-                    self.wake_control();
-                }
-
-                unsafe {
-                    let result_data_ptr: &[u8] = &*result_data;
-
-                    ptr::copy_nonoverlapping(
-                        result_data_ptr.as_ptr(),
-                        response_buffer.as_mut_ptr().add(bytes_written),
-                        result_data_length,
-                    );
-                }
-
-                bytes_written += result_data_length;
-
-                self.state.set(ActionStateInner::Sent {
-                    response_buffer: Some(response_buffer),
-                    bytes_written,
-                });
-            }
-        }
-    }
-
     pub fn respond(&self, result: Result<Option<*const [u8]>, Error>) {
-        if let ActionStateInner::Sent {
-            response_buffer,
-            bytes_written,
-        } = self.state.get()
-        {
+        if let ActionStateInner::Sent { response_buffer } = self.state.get() {
             // Response buffer may be a value (given by the optional) and should be filled under the following conditions:
             //
             // * The result is OK and its optional contains a value
@@ -176,7 +131,6 @@ impl ActionState {
             fn get_result(
                 result: Result<Option<*const [u8]>, Error>,
                 response_buffer: Option<*mut [u8]>,
-                bytes_written: usize,
             ) -> Result<Option<usize>, Error> {
                 match result {
                     Ok(Some(result_data)) => unsafe {
@@ -185,7 +139,7 @@ impl ActionState {
                                 let result_data_length = result_data.len();
                                 let response_buffer: &mut [u8] = &mut *response_buffer_ptr;
 
-                                if (response_buffer.len() - bytes_written) < result_data_length {
+                                if response_buffer.len() < result_data_length {
                                     return Err(Error::BufferTooSmall);
                                 }
 
@@ -193,7 +147,7 @@ impl ActionState {
 
                                 ptr::copy_nonoverlapping(
                                     result_data_ptr.as_ptr(),
-                                    response_buffer.as_mut_ptr().add(bytes_written),
+                                    response_buffer.as_mut_ptr(),
                                     result_data_length,
                                 );
 
@@ -208,8 +162,10 @@ impl ActionState {
             }
 
             self.state.set(ActionStateInner::Done {
-                result: get_result(result, response_buffer, bytes_written),
+                result: get_result(result, response_buffer),
             });
+
+            warn!("Pending action");
 
             self.wake_control();
         } else {

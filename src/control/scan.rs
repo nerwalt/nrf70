@@ -22,13 +22,26 @@ pub enum ScanType {
     Passive,
 }
 
-/// Scan options.
+/// WiFi scan bands.
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[repr(u8)]
+pub enum ScanBands {
+    /// Scan all bands (2.4 GHz and 5.0 Ghz)
+    All = 0,
+    /// Scan only the 2.4 GHz band
+    Band2_4GHz = 1,
+    /// Scan only the 5.0 GHz band
+    Band5_0GHz = 2,
+}
+
+/// Scan options.
+#[derive(Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[non_exhaustive]
 pub struct ScanOptions {
-    /// SSID to scan for.
-    // pub ssid: Option<heapless::String<32>>,
+    /// SSIDs to scan for (up to 2).
+    pub ssids: Option<heapless::Vec<heapless::String<32>, 2>>,
     /// If set to `None`, all APs will be returned. If set to `Some`, only APs
     /// with the specified BSSID will be returned.
     pub bssid: Option<[u8; 6]>,
@@ -40,16 +53,20 @@ pub struct ScanOptions {
     pub scan_type: ScanType,
     /// Period of time to wait on each channel when passive scanning.
     pub dwell_time: Option<Duration>,
+    /// Bands to scan
+    pub bands: ScanBands,
 }
 
 impl Default for ScanOptions {
     fn default() -> Self {
         Self {
+            ssids: None,
             bssid: None,
             nprobes: None,
             home_time: None,
             scan_type: ScanType::Passive,
             dwell_time: None,
+            bands: ScanBands::All,
         }
     }
 }
@@ -59,6 +76,8 @@ impl<'a> Control<'a> {
     /// Run a wifi scan
     pub async fn scan(&mut self, options: ScanOptions) -> Result<(), Error> {
         let mut command = nrf_wifi_umac_cmd_scan::default();
+
+        command.info.scan_reason = scan_reason::SCAN_DISPLAY as i32;
 
         match options.scan_type {
             ScanType::Active => {
@@ -77,13 +96,23 @@ impl<'a> Control<'a> {
             }
         }
 
+        if let Some(ssids) = options.ssids {
+            command.info.scan_params.num_scan_ssids = ssids.len() as u8;
+            for (i, ssid) in ssids.iter().enumerate() {
+                command.info.scan_params.scan_ssids[i].nrf_wifi_ssid_len = ssid.len() as u8;
+                command.info.scan_params.scan_ssids[i].nrf_wifi_ssid[..ssid.len()].copy_from_slice(ssid.as_bytes());
+                debug!(">>> {:?}", ssid.as_str());
+                
+            }
+        }
+
         if let Some(bssid) = options.bssid {
             command.info.scan_params.mac_addr = bssid;
         }
 
-        command.info.scan_params.num_scan_channels = 0;
+        command.info.scan_params.bands = options.bands as u8;
 
-        command.info.scan_reason = scan_reason::SCAN_DISPLAY as i32;
+        command.info.scan_params.num_scan_channels = 0;
 
         self.action_state
             .issue(Action::Command((command.domain(), true, sliceit(&command), None)))
@@ -139,7 +168,6 @@ impl<'a> Control<'a> {
                 }
             }
             Err(error) => {
-                error!("Failed to get stats: {:?}", error);
                 return Err(error);
             }
         }

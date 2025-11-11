@@ -9,7 +9,7 @@ use embassy_nrf::spim::{self, Spim};
 use embassy_time::{Delay, Duration, Timer};
 use embedded_hal_bus::spi::ExclusiveDevice;
 use nrf70::bus::SpiBus;
-use nrf70::control::scan::{ScanOptions, ScanType};
+use nrf70::control::scan::*;
 use nrf70_examples::*;
 use static_cell::StaticCell;
 use {defmt_rtt as _, embassy_nrf as _, panic_probe as _};
@@ -55,10 +55,17 @@ async fn main(spawner: Spawner) {
         Err(error) => error!("Failed to initialize {:?}", error),
     };
 
+    let mut ssids = heapless::Vec::<heapless::String<32>, 2>::new();
+    let mut ssid = heapless::String::<32>::new();
+    let _ = ssid.push_str("slaphappy");
+    ssids.push(ssid).unwrap();
+
     info!("Triggering scan");
     let mut scan_options = ScanOptions::default();
-    scan_options.scan_type = ScanType::Active;
-    scan_options.dwell_time = Some(Duration::from_millis(50));
+    // scan_options.ssids = Some(ssids);
+    scan_options.scan_type = ScanType::Passive;
+    // scan_options.bands = ScanBands::Band5_0GHz;
+    scan_options.dwell_time = Some(Duration::from_millis(500));
 
     match control.scan(scan_options).await {
         Ok(()) => info!("Scan complete"),
