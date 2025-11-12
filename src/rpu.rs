@@ -242,7 +242,7 @@ impl<BUS: Bus> Rpu<BUS> {
             self.receive_queues[queue_index].number_of_buffers = RX_BUFS_PER_QUEUE as usize;
 
             for buffer_index in 0..self.receive_queues[queue_index].number_of_buffers {
-                let descriptor_identifier = queue_index * self.number_of_receive_queues + buffer_index as usize;
+                let descriptor_identifier = queue_index * RX_BUFS_PER_QUEUE as usize + buffer_index as usize;
                 let rpu_address = (RPU_MEM_PKT_BASE + RPU_PKTRAM_SIZE - RX_TOTAL_SIZE as u32)
                     + (RX_BUF_SIZE * descriptor_identifier) as u32;
 
