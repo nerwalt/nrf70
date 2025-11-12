@@ -6,8 +6,9 @@ use crate::bindings::{
     NRF_WIFI_SIGNAL_TYPE_MBM, NRF_WIFI_SIGNAL_TYPE_UNSPEC, nrf_wifi_signal, nrf_wifi_umac_cmd_get_scan_results,
     nrf_wifi_umac_cmd_scan, nrf_wifi_umac_event_new_scan_display_results, scan_reason, umac_display_results,
 };
+use crate::SCANE_RESULTS_CHANNEL;
 use crate::rpu::commands::Command;
-use crate::util::{sliceit, unsliceit};
+use crate::util::sliceit;
 use crate::{Control, Error};
 
 /// WiFi scan type.
@@ -142,7 +143,7 @@ impl<'a> Control<'a> {
 
         let mut response = [0u8; 1024];
 
-        let mut results = WifiScanResults::<24>::default();
+        SCANE_RESULTS_CHANNEL.clear();
 
         match self
             .action_state
@@ -155,21 +156,37 @@ impl<'a> Control<'a> {
             .await
         {
             Ok(response_length) => {
-                if let Some(length) = response_length {
-                    let raw_results: &nrf_wifi_umac_event_new_scan_display_results = unsliceit(&response[..length]);
-                    match WifiScanResults::try_from(raw_results) {
+                if let Some(_length) = response_length {
+                    // ???
+                }
+            }
+            Err(error) => {
+                return Err(error);
+            }
+        };
+
+        let mut results = WifiScanResults::<24>::default();
+
+        loop {
+            match SCANE_RESULTS_CHANNEL.try_receive() {
+                Ok(chunk) => {
+                    info!(">>> received scan results on channel {}", SCANE_RESULTS_CHANNEL.len());
+                    match WifiScanResults::try_from(&chunk) {
                         Ok(new_results) => {
+                            info!(">>> {}", new_results);
                             if let Err(_) = results.extend(&new_results) {
                                 return Ok(results);
                             }
                         }
                         Err(_err) => return Err(Error::InvalidData),
                     }
+                    
+                }
+                Err(_) => {
+                    break
                 }
             }
-            Err(error) => {
-                return Err(error);
-            }
+            
         }
 
         Ok(results)

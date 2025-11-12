@@ -16,7 +16,6 @@ use embassy_time::{Duration, Timer};
 use embedded_hal::digital::{InputPin, OutputPin};
 use embedded_hal_async::digital::Wait;
 use fmt::Bytes;
-use heapless::String;
 use net::{NetworkBuffer, eth};
 use rpu::Rpu;
 use rpu::firmware::{FirmwareInfo, FirmwareParseError};
@@ -32,6 +31,12 @@ mod util;
 
 #[allow(dead_code)]
 mod bindings;
+
+// TODO FIXME TEMPORARY
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use crate::bindings::nrf_wifi_umac_event_new_scan_display_results;
+pub type ScanResultsChannel = embassy_sync::channel::Channel<CriticalSectionRawMutex, nrf_wifi_umac_event_new_scan_display_results, 10>;
+pub static SCANE_RESULTS_CHANNEL: ScanResultsChannel = ScanResultsChannel::new();
 
 const MTU: usize = 1514;
 
@@ -178,7 +183,7 @@ impl<'a, BUS: Bus, IN: InputPin + Wait, OUT: OutputPin> Runner<'a, BUS, IN, OUT>
                                 self.action_state.respond(Ok(Some(&umac_info_buffer[..])));
                             }
                         },
-                        Action::WaitForDone => { }
+                        Action::WaitForDone => { },
                     };
                 }
                 Either3::Second(packet) => {
@@ -339,12 +344,19 @@ impl<'a, BUS: Bus, IN: InputPin + Wait, OUT: OutputPin> Runner<'a, BUS, IN, OUT>
             }
             Ok(nrf_wifi_umac_events::NRF_WIFI_UMAC_EVENT_SCAN_DISPLAY_RESULT) => {
                 let event: &nrf_wifi_umac_event_new_scan_display_results = unsliceit(buffer);
+                if let Err(_err) = SCANE_RESULTS_CHANNEL.try_send(*event) {
+                    error!("Error sending scan results on channel");
+                    self.action_state.respond(Err(Error::BufferTooSmall));
+                }
+                info!(">>> sent scan results on channel {}", SCANE_RESULTS_CHANNEL.len());
                 if event.umac_hdr.seq != 0 {
-                    debug!(">>> more scan results");
+                    info!(">>> more scan results");
+                    // self.action_state.respond_chunk(Ok((Some(buffer as *const [u8]), true)));
                 } else {
-                    debug!(">>> scan results done");
-                };
-                self.action_state.respond(Ok(Some(buffer as *const [u8])));
+                    info!(">>> scan results done");
+                    self.action_state.respond(Ok(None));
+                }
+                // self.action_state.respond(Ok(Some(buffer as *const [u8])));
             }
             Ok(nrf_wifi_umac_events::NRF_WIFI_UMAC_EVENT_SCAN_DONE) => {
                 let event: &nrf_wifi_umac_event_scan_done = unsliceit(buffer);
@@ -475,7 +487,7 @@ impl<'a, BUS: Bus, IN: InputPin + Wait, OUT: OutputPin> Runner<'a, BUS, IN, OUT>
                     }
                 }
                 Ok(nrf_wifi_rx_pkt_type::NRF_WIFI_RX_PKT_BCN_PRB_RSP) => {
-                    let mut _buffer: String<512> = String::new();
+                    // let mut buffer: heapless::String<512> = heapless::String::new();
                     // util::hexdump(&mut buffer, network_buffer.get_data());
                     // info!("{}", buffer);
                 }
@@ -486,6 +498,8 @@ impl<'a, BUS: Bus, IN: InputPin + Wait, OUT: OutputPin> Runner<'a, BUS, IN, OUT>
                     return Err(Error::NotHandled(rx_packet_type as u32));
                 }
             }
+
+            self.rpu.release_rx_buffer(packet_descriptor_identifier).await?;
         }
 
         Ok(())

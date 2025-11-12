@@ -165,8 +165,6 @@ impl ActionState {
                 result: get_result(result, response_buffer),
             });
 
-            warn!("Pending action");
-
             self.wake_control();
         } else {
             warn!("Acking action, but no pending action");

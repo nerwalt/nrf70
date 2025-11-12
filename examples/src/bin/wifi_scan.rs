@@ -60,26 +60,33 @@ async fn main(spawner: Spawner) {
     let _ = ssid.push_str("slaphappy");
     ssids.push(ssid).unwrap();
 
-    info!("Triggering scan");
-    let mut scan_options = ScanOptions::default();
-    // scan_options.ssids = Some(ssids);
-    scan_options.scan_type = ScanType::Passive;
-    // scan_options.bands = ScanBands::Band5_0GHz;
-    scan_options.dwell_time = Some(Duration::from_millis(500));
 
-    match control.scan(scan_options).await {
-        Ok(()) => info!("Scan complete"),
-        Err(error) => error!("Failed to perform scan {}", error),
-    }
+    for n in 0..3 {
 
-    match control.get_scan_results().await {
-        Ok(results) => {
-            info!("Scan results");
-            for ap in results.aps {
-                info!(" {:?}", ap);
-            }
+        info!("Triggering scan {}", n+1);
+        let mut scan_options = ScanOptions::default();
+        scan_options.scan_type = ScanType::Passive;
+        scan_options.dwell_time = Some(Duration::from_millis(500));
+
+        match control.scan(scan_options).await {
+            Ok(()) => info!("Scan complete"),
+            Err(error) => error!("Failed to perform scan {}", error),
         }
-        Err(error) => error!("Failed to get scan results: {}", error),
+
+        match control.get_scan_results().await {
+            Ok(results) => {
+                info!("Scan results");
+                for ap in results.aps {
+                    info!(" {:?}", ap);
+                }
+            }
+            Err(error) => error!("Failed to get scan results: {}", error),
+        }
+
+        if n < 2 {
+            info!("Waiting before next scan");
+            Timer::after_secs(30).await;
+        }
     }
 
     info!("Blinky");
