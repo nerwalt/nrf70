@@ -35,7 +35,7 @@ mod bindings;
 // TODO FIXME TEMPORARY
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use crate::bindings::nrf_wifi_umac_event_new_scan_display_results;
-pub type ScanResultsChannel = embassy_sync::channel::Channel<CriticalSectionRawMutex, nrf_wifi_umac_event_new_scan_display_results, 10>;
+pub type ScanResultsChannel = embassy_sync::channel::Channel<CriticalSectionRawMutex, nrf_wifi_umac_event_new_scan_display_results, 4>;
 pub static SCANE_RESULTS_CHANNEL: ScanResultsChannel = ScanResultsChannel::new();
 
 const MTU: usize = 1514;
@@ -348,15 +348,12 @@ impl<'a, BUS: Bus, IN: InputPin + Wait, OUT: OutputPin> Runner<'a, BUS, IN, OUT>
                     error!("Error sending scan results on channel");
                     self.action_state.respond(Err(Error::BufferTooSmall));
                 }
-                info!(">>> sent scan results on channel {}", SCANE_RESULTS_CHANNEL.len());
                 if event.umac_hdr.seq != 0 {
-                    info!(">>> more scan results");
-                    // self.action_state.respond_chunk(Ok((Some(buffer as *const [u8]), true)));
+                    trace!("Scan result chunk");
                 } else {
-                    info!(">>> scan results done");
+                    trace!("Scan result");
                     self.action_state.respond(Ok(None));
                 }
-                // self.action_state.respond(Ok(Some(buffer as *const [u8])));
             }
             Ok(nrf_wifi_umac_events::NRF_WIFI_UMAC_EVENT_SCAN_DONE) => {
                 let event: &nrf_wifi_umac_event_scan_done = unsliceit(buffer);
@@ -498,8 +495,6 @@ impl<'a, BUS: Bus, IN: InputPin + Wait, OUT: OutputPin> Runner<'a, BUS, IN, OUT>
                     return Err(Error::NotHandled(rx_packet_type as u32));
                 }
             }
-
-            self.rpu.release_rx_buffer(packet_descriptor_identifier).await?;
         }
 
         Ok(())

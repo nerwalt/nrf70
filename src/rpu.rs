@@ -268,18 +268,6 @@ impl<BUS: Bus> Rpu<BUS> {
         self.firmware_initialize(&rf_parameters).await
     }
 
-    pub async fn release_rx_buffer(&mut self, descriptor_id: usize) -> Result<(), Error> {
-        let (queue_idx, buffer_idx) = self.descriptor_idenitfier_to_indicies(descriptor_id)?;
-        let buf = &self.receive_queues[queue_idx].buffers[buffer_idx];
-
-        let command = host_rpu_rx_buf_info {
-            addr: buf.rpu_address + RX_BUF_HEADROOM,
-        };
-        let command_buffer: [u32; 1] = unsafe { core::mem::transmute(command) };
-
-        self.send_rx_command(&command_buffer, descriptor_id as u32, queue_idx).await
-    }
-
     pub async fn read_event(
         &mut self,
         message_buffer: &mut [u32; (MAX_EVENT_POOL_LEN / 4) as usize],
@@ -383,8 +371,24 @@ impl<BUS: Bus> Rpu<BUS> {
             .data
             .copy_from_slice(&data);
 
+        // We've read the data into cache, so now release the RX buffer in the PRU
+        self.release_receive_buffer(descriptor_identifier).await?;
+
         Ok(())
     }
+
+    pub async fn release_receive_buffer(&mut self, descriptor_id: usize) -> Result<(), Error> {
+        let (queue_idx, buffer_idx) = self.descriptor_idenitfier_to_indicies(descriptor_id)?;
+        let buf = &self.receive_queues[queue_idx].buffers[buffer_idx];
+
+        let command = host_rpu_rx_buf_info {
+            addr: buf.rpu_address + RX_BUF_HEADROOM,
+        };
+        let command_buffer: [u32; 1] = unsafe { core::mem::transmute(command) };
+
+        self.send_rx_command(&command_buffer, descriptor_id as u32, queue_idx).await
+    }
+
 
     pub fn get_cached_receive_buffer_slice(&mut self, descriptor_identifier: usize) -> Result<&mut [u8], Error> {
         let (queue_index, buffer_index) = self.descriptor_idenitfier_to_indicies(descriptor_identifier)?;

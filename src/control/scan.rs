@@ -102,8 +102,6 @@ impl<'a> Control<'a> {
             for (i, ssid) in ssids.iter().enumerate() {
                 command.info.scan_params.scan_ssids[i].nrf_wifi_ssid_len = ssid.len() as u8;
                 command.info.scan_params.scan_ssids[i].nrf_wifi_ssid[..ssid.len()].copy_from_slice(ssid.as_bytes());
-                debug!(">>> {:?}", ssid.as_str());
-                
             }
         }
 
@@ -123,70 +121,40 @@ impl<'a> Control<'a> {
                 e
             })?;
 
-        trace!("Scan started");
-
         self.action_state.issue(Action::WaitForDone).await.map_err(|e| {
             error!("Wait for scan done failed: {:?}", e);
             e
         })?;
-
-        trace!("Scan done");
 
         Ok(())
     }
 
     /// Get the results of the last wifi scan
     pub async fn get_scan_results(&mut self) -> Result<WifiScanResults<24>, Error> {
-        let mut command = nrf_wifi_umac_cmd_get_scan_results::default();
-
-        command.scan_reason = scan_reason::SCAN_DISPLAY as i32;
-
-        let mut response = [0u8; 1024];
+        let mut cmd = nrf_wifi_umac_cmd_get_scan_results::default();
+        cmd.scan_reason = scan_reason::SCAN_DISPLAY as i32;
 
         SCANE_RESULTS_CHANNEL.clear();
 
-        match self
-            .action_state
-            .issue(Action::Command((
-                command.domain(),
-                true,
-                sliceit(&command),
-                Some(&mut response[..]),
-            )))
-            .await
-        {
-            Ok(response_length) => {
-                if let Some(_length) = response_length {
-                    // ???
-                }
-            }
-            Err(error) => {
-                return Err(error);
-            }
-        };
+        let action = Action::Command((cmd.domain(), true, sliceit(&cmd), None));
+        self.action_state.issue(action).await?;
 
         let mut results = WifiScanResults::<24>::default();
 
         loop {
             match SCANE_RESULTS_CHANNEL.try_receive() {
                 Ok(chunk) => {
-                    info!(">>> received scan results on channel {}", SCANE_RESULTS_CHANNEL.len());
                     match WifiScanResults::try_from(&chunk) {
                         Ok(new_results) => {
-                            info!(">>> {}", new_results);
                             if let Err(_) = results.extend(&new_results) {
                                 return Ok(results);
                             }
                         }
                         Err(_err) => return Err(Error::InvalidData),
                     }
-                    
                 }
-                Err(_) => {
-                    break
-                }
+                Err(_) => break,
             }
-            
         }
 
         Ok(results)
