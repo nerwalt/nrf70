@@ -57,7 +57,7 @@ async fn main(spawner: Spawner) {
 
     let mut ssids = heapless::Vec::<heapless::String<32>, 2>::new();
     let mut ssid = heapless::String::<32>::new();
-    let _ = ssid.push_str("slaphappy");
+    let _ = ssid.push_str("Lord of the Pings");
     ssids.push(ssid).unwrap();
 
 
