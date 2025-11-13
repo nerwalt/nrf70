@@ -75,7 +75,7 @@ async fn main(spawner: Spawner) {
 
         match control.get_scan_results().await {
             Ok(results) => {
-                info!("Scan results");
+                info!("Got {} scan results", results.aps.len());
                 for ap in results.aps {
                     info!(" {:?}", ap);
                 }

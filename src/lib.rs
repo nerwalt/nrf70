@@ -341,14 +341,12 @@ impl<'a, BUS: Bus, IN: InputPin + Wait, OUT: OutputPin> Runner<'a, BUS, IN, OUT>
             }
             Ok(nrf_wifi_umac_events::NRF_WIFI_UMAC_EVENT_SCAN_DISPLAY_RESULT) => {
                 let event: &nrf_wifi_umac_event_new_scan_display_results = unsliceit(buffer);
-                if event.umac_hdr.seq != 0 {
-                    trace!("Scan result chunk");
-                    if let Err(err) = self.action_state.respond_stream(&buffer[..size]) {
-                        self.action_state.finish_stream(Err(err));
-                    }
-                } else {
-                    trace!("Scan result");
-                    // self.action_state.respond(Ok(None));
+
+                if let Err(err) = self.action_state.respond_stream(&buffer[..size]) {
+                    self.action_state.finish_stream(Err(err));
+                }
+
+                if event.umac_hdr.seq == 0 {
                     let _ = self.action_state.finish_stream(Ok(Some(0)));
                 }
             }

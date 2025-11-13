@@ -153,8 +153,8 @@ impl<'a> Control<'a> {
                         Err(_err) => return Err(Error::InvalidData),
                     }
                 },
-                Err(e) => {
-                    error!("stream error: {:?}", e);
+                Err(err) => {
+                    error!("Stream error: {:?}", err);
                     break;
                 }
             }
