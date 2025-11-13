@@ -32,11 +32,6 @@ mod util;
 #[allow(dead_code)]
 mod bindings;
 
-// TODO FIXME TEMPORARY
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use crate::bindings::nrf_wifi_umac_event_new_scan_display_results;
-pub type ScanResultsChannel = embassy_sync::channel::Channel<CriticalSectionRawMutex, nrf_wifi_umac_event_new_scan_display_results, 4>;
-pub static SCANE_RESULTS_CHANNEL: ScanResultsChannel = ScanResultsChannel::new();
 
 const MTU: usize = 1514;
 
@@ -53,8 +48,10 @@ pub enum Error {
     InvalidAddress,
     InvalidArgument,
     InvalidData,
+    InvalidState,
     NotInitialized,
     BufferTooSmall,
+    StreamTooSmall,
     BufferOverflow,
     NoData,
     NotFound,
@@ -344,15 +341,15 @@ impl<'a, BUS: Bus, IN: InputPin + Wait, OUT: OutputPin> Runner<'a, BUS, IN, OUT>
             }
             Ok(nrf_wifi_umac_events::NRF_WIFI_UMAC_EVENT_SCAN_DISPLAY_RESULT) => {
                 let event: &nrf_wifi_umac_event_new_scan_display_results = unsliceit(buffer);
-                if let Err(_err) = SCANE_RESULTS_CHANNEL.try_send(*event) {
-                    error!("Error sending scan results on channel");
-                    self.action_state.respond(Err(Error::BufferTooSmall));
-                }
                 if event.umac_hdr.seq != 0 {
                     trace!("Scan result chunk");
+                    if let Err(err) = self.action_state.respond_stream(&buffer[..size]) {
+                        self.action_state.finish_stream(Err(err));
+                    }
                 } else {
                     trace!("Scan result");
-                    self.action_state.respond(Ok(None));
+                    // self.action_state.respond(Ok(None));
+                    let _ = self.action_state.finish_stream(Ok(Some(0)));
                 }
             }
             Ok(nrf_wifi_umac_events::NRF_WIFI_UMAC_EVENT_SCAN_DONE) => {

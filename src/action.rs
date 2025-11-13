@@ -1,12 +1,18 @@
 use core::cell::{Cell, RefCell};
 use core::future::{Future, poll_fn};
 use core::ptr;
-use core::task::{Poll, Waker};
+use core::pin::Pin;
+use core::task::{Context, Poll, Waker};
 
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::channel::{Channel, Receiver};
 use embassy_sync::waitqueue::WakerRegistration;
+
+use futures::Stream;
 
 use crate::Error;
 use crate::bindings::nrf_wifi_host_rpu_msg_type;
+
 
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -35,6 +41,7 @@ enum ActionStateInner {
 struct Wakers {
     control: WakerRegistration,
     runner: WakerRegistration,
+    stream: WakerRegistration,
 }
 
 impl Wakers {
@@ -42,13 +49,61 @@ impl Wakers {
         Self {
             control: WakerRegistration::new(),
             runner: WakerRegistration::new(),
+            stream: WakerRegistration::new(),
         }
+    }
+}
+
+pub type StreamResponse = heapless::Vec<u8, 1600>;
+pub const STREAM_CAP: usize = 4;
+pub type StreamResponseChannel = Channel<CriticalSectionRawMutex, StreamResponse, STREAM_CAP>;
+
+static STREAM_RESONSE_CHANNEL: StreamResponseChannel = StreamResponseChannel::new();
+
+pub struct ResponseStream<'a> {
+    receiver: Receiver<'static, CriticalSectionRawMutex, StreamResponse, STREAM_CAP>,
+    state: &'a ActionState,
+    done: bool,
+}
+
+impl<'a> Stream for ResponseStream<'a> {
+    type Item = Result<StreamResponse, Error>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+
+        if this.done {
+            return Poll::Ready(None);
+        }
+
+        match this.receiver.poll_receive(cx) {
+            Poll::Ready(chunk) => return Poll::Ready(Some(Ok(chunk))),
+            Poll::Pending => {}
+        }
+
+        if let ActionStateInner::Done { result } = this.state.state.get() {
+            this.done = true;
+            return match result {
+                Ok(_size) => Poll::Ready(None),
+                Err(e) => Poll::Ready(Some(Err(e))),
+            };
+        }
+
+        this.state.register_stream(cx.waker());
+        Poll::Pending
+    }
+}
+
+impl<'a> core::fmt::Debug for ResponseStream<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ResponseStream").finish()
     }
 }
 
 pub struct ActionState {
     state: Cell<ActionStateInner>,
     wakers: RefCell<Wakers>,
+    chan: &'static StreamResponseChannel,
 }
 
 #[allow(dead_code)]
@@ -57,24 +112,16 @@ impl ActionState {
         Self {
             state: Cell::new(ActionStateInner::Done { result: Ok(None) }),
             wakers: RefCell::new(Wakers::new()),
+            chan: &STREAM_RESONSE_CHANNEL,
         }
     }
 
-    fn wake_control(&self) {
-        self.wakers.borrow_mut().control.wake();
-    }
-
-    fn register_control(&self, waker: &Waker) {
-        self.wakers.borrow_mut().control.register(waker);
-    }
-
-    fn wake_runner(&self) {
-        self.wakers.borrow_mut().runner.wake();
-    }
-
-    fn register_runner(&self, waker: &Waker) {
-        self.wakers.borrow_mut().runner.register(waker);
-    }
+    fn wake_control(&self) { self.wakers.borrow_mut().control.wake(); }
+    fn register_control(&self, w: &Waker) { self.wakers.borrow_mut().control.register(w); }
+    fn wake_runner(&self) { self.wakers.borrow_mut().runner.wake(); }
+    fn register_runner(&self, w: &Waker) { self.wakers.borrow_mut().runner.register(w); }
+    fn wake_stream(&self) { self.wakers.borrow_mut().stream.wake(); }
+    fn register_stream(&self, w: &Waker) { self.wakers.borrow_mut().stream.register(w); }
 
     pub fn wait_complete(&self) -> impl Future<Output = Result<Option<usize>, Error>> + '_ {
         poll_fn(|cx| {
@@ -170,4 +217,47 @@ impl ActionState {
             warn!("Acking action, but no pending action");
         }
     }
+
+    /// Issue an action that expects a stream of responses
+    pub fn issue_stream(&self, action: Action) -> Result<ResponseStream<'_>, Error> {
+        if !matches!(self.state.get(), ActionStateInner::Done { .. }) {
+            return Err(Error::Busy);
+        }
+
+        self.chan.clear();
+
+        let receiver = self.chan.receiver();
+        self.state.set(ActionStateInner::Pending(action));
+        self.wake_runner();
+        Ok(ResponseStream { receiver, state: self, done: false })
+    }
+
+
+    /// Send a resopnse on the the response stream (valid only with `issue_stream`).
+    pub fn respond_stream(&self, response: &[u8]) -> Result<(), Error> {
+        match self.state.get() {
+            ActionStateInner::Sent{..} => {
+                let mut v = StreamResponse::new();
+                if let Err(_) = v.extend_from_slice(response) {
+                    return Err(Error::BufferTooSmall)
+                }
+                if let Err(_) = self.chan.try_send(v) {
+                    return Err(Error::StreamTooSmall)
+                }
+            }
+            _ => return Err(Error::InvalidState),
+        }
+
+        Ok(())
+    }
+
+    /// Finish a stream action
+    pub fn finish_stream(&self, result: Result<Option<usize>, Error>) {
+        self.state.set(ActionStateInner::Done { result });
+        self.wake_control();
+        self.wake_stream();
+    }
+
 }
+
+

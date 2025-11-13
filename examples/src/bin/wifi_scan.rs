@@ -82,10 +82,12 @@ async fn main(spawner: Spawner) {
             }
             Err(error) => error!("Failed to get scan results: {}", error),
         }
+        info!("");
 
         if n < 2 {
-            info!("Waiting before next scan");
-            Timer::after_secs(30).await;
+            let wait = Duration::from_secs(30);
+            info!("Waiting {} seconds before next scan", wait.as_secs());
+            Timer::after(wait).await;
         }
     }
 

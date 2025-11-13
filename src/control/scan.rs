@@ -1,4 +1,5 @@
 use embassy_time::Duration;
+use futures::StreamExt;
 use heapless::Vec;
 
 use crate::action::Action;
@@ -6,9 +7,8 @@ use crate::bindings::{
     NRF_WIFI_SIGNAL_TYPE_MBM, NRF_WIFI_SIGNAL_TYPE_UNSPEC, nrf_wifi_signal, nrf_wifi_umac_cmd_get_scan_results,
     nrf_wifi_umac_cmd_scan, nrf_wifi_umac_event_new_scan_display_results, scan_reason, umac_display_results,
 };
-use crate::SCANE_RESULTS_CHANNEL;
 use crate::rpu::commands::Command;
-use crate::util::sliceit;
+use crate::util::{sliceit, unsliceit};
 use crate::{Control, Error};
 
 /// WiFi scan type.
@@ -134,17 +134,17 @@ impl<'a> Control<'a> {
         let mut cmd = nrf_wifi_umac_cmd_get_scan_results::default();
         cmd.scan_reason = scan_reason::SCAN_DISPLAY as i32;
 
-        SCANE_RESULTS_CHANNEL.clear();
-
         let action = Action::Command((cmd.domain(), true, sliceit(&cmd), None));
-        self.action_state.issue(action).await?;
+
+        let mut stream = self.action_state.issue_stream(action)?;
 
         let mut results = WifiScanResults::<24>::default();
 
-        loop {
-            match SCANE_RESULTS_CHANNEL.try_receive() {
+        while let Some(result) = stream.next().await {
+            match result {
                 Ok(chunk) => {
-                    match WifiScanResults::try_from(&chunk) {
+                    let scan_results: &nrf_wifi_umac_event_new_scan_display_results = unsliceit(chunk.as_slice());
+                    match WifiScanResults::try_from(scan_results) {
                         Ok(new_results) => {
                             if let Err(_) = results.extend(&new_results) {
                                 return Ok(results);
@@ -152,8 +152,11 @@ impl<'a> Control<'a> {
                         }
                         Err(_err) => return Err(Error::InvalidData),
                     }
+                },
+                Err(e) => {
+                    error!("stream error: {:?}", e);
+                    break;
                 }
-                Err(_) => break,
             }
         }
 
