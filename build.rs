@@ -3,9 +3,7 @@ use std::fs::File;
 use std::path::PathBuf;
 
 fn main() {
-    let nrf_wifi_path = PathBuf::from("third_party/nrf70-bm/nrf_wifi")
-        .canonicalize()
-        .expect("Cannot canonicalize path");
+    let nrf_wifi_path = PathBuf::from("third_party/nrf70-bm/nrf_wifi");
 
     let bindings = bindgen::Builder::default()
         .header("wrapper.h")
